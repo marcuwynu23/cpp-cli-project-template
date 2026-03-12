@@ -242,15 +242,118 @@ app.require_subcommand(0, 1);  // 0 or 1
 
 Define options on the subcommand `CLI::App*`, not on the root app, so they only apply when that subcommand is used.
 
-### Chained subcommands
+### Nested subcommands (sub-subcommands)
 
-You can add subcommands to subcommands (e.g. `app cache clear`, `app cache list`):
+You can add **subcommands to a subcommand**, so the CLI has multiple levels: `app <subcommand> <sub-subcommand> [options]`. Examples: `app cache clear`, `app cache list`, `git remote add`, `docker container run`.
+
+#### Adding nested subcommands
+
+Call `add_subcommand()` on the **parent** subcommand’s pointer, not on the root app:
 
 ```cpp
 CLI::App* cache = app.add_subcommand("cache", "Cache management");
 CLI::App* clear = cache->add_subcommand("clear", "Clear the cache");
 CLI::App* list  = cache->add_subcommand("list", "List cache entries");
 ```
+
+- `app cache` — shows help for the cache group (lists clear/list).
+- `app cache clear` — runs the clear sub-subcommand.
+- `app cache list` — runs the list sub-subcommand.
+
+#### Requiring one sub-subcommand
+
+To require that the user choose exactly one nested subcommand (so `app cache` alone is invalid):
+
+```cpp
+cache->require_subcommand(1);  // exactly one of clear/list
+```
+
+Without this, `app cache` would parse and you’d have to handle “cache with no sub-subcommand” yourself. With `require_subcommand(1)`, CLI11 prints an error or help if the user runs only `app cache`.
+
+#### Options on nested subcommands
+
+Add options to each nested `CLI::App*` so they only apply when that sub-subcommand is used:
+
+```cpp
+std::string cache_path;
+std::vector<std::string> cache_arguments;
+
+clear->add_option("--path", cache_path, "Cache path to clear");
+clear->add_option("-a,--argument", cache_arguments, "Extra arguments (repeatable)");
+
+list->add_option("--path", cache_path, "Cache path to list");
+list->add_option("-a,--argument", cache_arguments, "Extra arguments (repeatable)");
+```
+
+You can bind the same variables (e.g. `cache_path`, `cache_arguments`) to both `clear` and `list`; only the options for the parsed sub-subcommand are applied.
+
+#### Dispatching after parse
+
+Check the parent subcommand with `->parsed()`, then which nested subcommand ran:
+
+```cpp
+CLI11_PARSE(app, argc, argv);
+
+if (cache->parsed()) {
+    if (clear->parsed()) {
+        // user ran: app cache clear [options]
+        do_clear(cache_path, cache_arguments);
+    } else if (list->parsed()) {
+        // user ran: app cache list [options]
+        do_list(cache_path, cache_arguments);
+    }
+}
+```
+
+Use `subcommand->parsed()` (or `app.got_subcommand(subcommand)`) to see which branch was taken.
+
+#### Help hierarchy
+
+Help is scoped to the current level:
+
+- `app --help` — top-level options and subcommands (build, run, cache).
+- `app cache --help` — cache subcommand and its sub-subcommands (clear, list).
+- `app cache clear --help` — options for `clear` only (e.g. `--path`, `-a/--argument`).
+
+#### Full example: cache with clear and list
+
+```cpp
+CLI::App* cache = app.add_subcommand("cache", "Cache management");
+
+CLI::App* cache_clear = cache->add_subcommand("clear", "Clear the cache");
+std::string cache_path;
+std::vector<std::string> cache_args;
+cache_clear->add_option("--path", cache_path, "Cache path to clear");
+cache_clear->add_option("-a,--argument", cache_args, "Extra args (repeatable)");
+
+CLI::App* cache_list = cache->add_subcommand("list", "List cache entries");
+cache_list->add_option("--path", cache_path, "Cache path to list");
+cache_list->add_option("-a,--argument", cache_args, "Extra args (repeatable)");
+
+cache->require_subcommand(1);
+
+CLI11_PARSE(app, argc, argv);
+
+if (cache->parsed()) {
+    if (cache_clear->parsed())
+        fmt::print("Clearing cache at {} with {} extra arg(s).\n", cache_path, cache_args.size());
+    else
+        fmt::print("Listing cache at {}.\n", cache_path);
+}
+```
+
+Example runs:
+
+```bash
+app cache --help
+app cache clear --help
+app cache clear --path /tmp -a force
+app cache list --path /var/cache
+```
+
+#### Deeper nesting
+
+You can add subcommands to a nested subcommand for a third level (e.g. `app config set key value`). Use the same pattern: get a pointer from `add_subcommand()`, add options or further subcommands to it, and use `require_subcommand(0, 1)` or `require_subcommand(1)` as needed. Dispatch with `parent->parsed()` and `child->parsed()`.
 
 ---
 
@@ -484,6 +587,7 @@ tool copy file.txt backup.txt
 | Flag              | `add_flag("--verbose,-v", var, "description")` |
 | Positional        | `add_option("name", var, "description")` (no `-`) |
 | Subcommand        | `add_subcommand("cmd", "description")` |
+| Nested subcommand | `parent->add_subcommand("sub", "description")`; `parent->require_subcommand(1)` |
 | Required          | `->required()` |
 | Default in help   | `->capture_default_str()` |
 | Range             | `->check(CLI::Range(min, max))` |
