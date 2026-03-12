@@ -3,14 +3,17 @@ cmake_minimum_required(VERSION 3.10)
 # set the project name
 project(app)
 
-# add the executable
-# Include source files from the 'app' directory
-file(GLOB APP_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp")
+# add the executable (MVC: model/, view/, controller/ under src)
+file(GLOB_RECURSE APP_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp")
 add_executable(app ${APP_SOURCES})
 
-# add header files
-target_include_directories(app PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+# include: project include/ and src/ for MVC headers (model/, view/, controller/)
+target_include_directories(app PRIVATE
+  ${CMAKE_CURRENT_SOURCE_DIR}/include
+  ${CMAKE_CURRENT_SOURCE_DIR}/src
+)
 
-# find and link fmt library
+# CLI11 and fmt
+find_package(CLI11 CONFIG REQUIRED)
 find_package(fmt CONFIG REQUIRED)
-target_link_libraries(app PRIVATE fmt::fmt)
+target_link_libraries(app PRIVATE CLI11::CLI11 fmt::fmt)
